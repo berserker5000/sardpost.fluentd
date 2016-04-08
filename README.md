@@ -7,7 +7,8 @@ recommended to configure the environment to prevent unnecessary problems.
 WARNING: After the first tasks are completed succesfully the server gets rebooted.  
 Pre tasks can be disabled setting to "False" the variable "pre_install" in
 defaults/main.yml.
-The role installs td-agent from the official repository and
+The role installs td-agent from the official repository.
+Features:
 
 ```yml
           Pre tasks:
