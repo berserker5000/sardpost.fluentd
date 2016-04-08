@@ -1,0 +1,7 @@
+---
+
+- name: "RHEL/Centos | Starting fluentd(td-agent) installation"
+  include: "EL.yml"
+  when: ansible_os_family == "RedHat"
+  tags:
+    - always

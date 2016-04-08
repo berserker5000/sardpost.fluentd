@@ -1,0 +1,97 @@
+---
+# tasks file for sardpost.fluentd
+# Tasks specific for RHEL/Centos systems
+
+- name: "RHEL/Centos | Pre Task | Increase Max number of File Descriptors"
+  blockinfile:
+    dest: /etc/security/limits.conf
+    backup: yes
+    insertafter: EOF
+    content: |
+      root soft nofile 65536
+      root hard nofile 65536
+      * soft nofile 65536
+      * hard nofile 65536
+  register: limits
+  when: pre_install
+
+- name: "RHEL/Centos | Pre Task | Optimize Network Kernel Parameters"
+  blockinfile:
+    dest: /etc/sysctl.conf
+    backup: yes
+    insertafter: EOF
+    content: |
+      net.ipv4.tcp_tw_recycle = 1
+      net.ipv4.tcp_tw_reuse = 1
+      net.ipv4.ip_local_port_range = 10240    65535
+  register: sysctl
+  when: pre_install
+
+- name: RHEL/Centos | Reboot the server
+  shell: sleep 2 && shutdown -r now "Ansible updates triggered"
+  async: 1
+  poll: 0
+  ignore_errors: true
+  when: limits.changed and pre_install
+
+- name: RHEL/Centos | Wait for the server to finish rebooting
+  sudo: no
+  local_action: wait_for host="{{ inventory_hostname }}" port=22 delay=30 timeout=220 state=started
+  when: limits.changed and pre_install
+
+- name: RHEL/Centos | Importing rpm GPG key for treasure data repository
+  rpm_key: state=present key=https://packages.treasuredata.com/GPG-KEY-td-agent
+
+- name: "RHEL/Centos | Installing treasure data repository"
+  template: "src=treasuredata.repo.j2
+            dest=/etc/yum.repos.d/treasuredata.repo
+            owner=root
+            group=root
+            mode=0644"
+  tags:
+    - td-agent
+    - init
+
+- name: "RHEL/Centos | Enabling treasure data repository"
+  ini_file: dest=/etc/yum.repos.d/treasuredata.repo section=treasuredata option=enabled value=1
+
+- name: "RHEL/Centos | Installing fluentd(td-agent)"
+  yum: name={{ item }} state=present
+  with_items:
+    - td-agent
+  tags:
+    - td-agent
+    - init
+
+- name: "RHEL/Centos | Reloading systemd"
+  command: systemctl daemon-reload
+
+- name: "RHEL/Centos | Copying custom td-agent.conf in /etc/td-agent/"
+  copy: src=td-agent.conf dest=/etc/td-agent/td-agent.conf
+  register: tdagent_file
+  when: custom_conf_file
+
+- name: "RHEL/Centos | Restoring SElinux context in /etc/td-agent/"
+  command: "/sbin/restorecon -RF /etc/td-agent/"
+  when: tdagent_file.changed
+
+#Comment out this task if you don't want to install fluent-plugin-elasticsearch
+#If you want to install other plugins just substitute the name of the plugin
+#in the task
+#------------------------------------------------------------------------------
+- name: RHEL/Centos | Installing fluent-plugin-elasticsearch
+  command: td-agent-gem install fluent-plugin-elasticsearch
+#------------------------------------------------------------------------------
+
+- name: "RHEL/Centos | Enabling and starting fluentd(td-agent) service"
+  service: name=td-agent state=started enabled=yes
+  tags: td-agent
+
+#Comment out the following tasks if you want to customize rsyslog in other ways
+#------------------------------------------------------------------------------
+- name: "RHEL/Centos | Set Up rsyslogd to forward the logs to fluentd(td-agent)"
+  lineinfile: dest=/etc/rsyslog.conf insertafter=EOF line="*.* @127.0.0.1:42185"
+
+- name: "RHEL/Centos | Restarting rsyslogd service"
+  service: name=rsyslog state=restarted enabled=yes
+#------------------------------------------------------------------------------

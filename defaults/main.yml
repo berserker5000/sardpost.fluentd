@@ -1,0 +1,4 @@
+---
+# defaults file for sardpost.fluentd
+pre_install: True
+custom_conf_file: True
